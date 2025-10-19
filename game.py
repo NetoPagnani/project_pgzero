@@ -5,11 +5,12 @@ except Exception:
     pass
 from pgzero.rect import Rect
 
+# Sprites esperados na pasta images/: heroi_Fall.png, heroi_Jump.png, inimigo_Fall.png, inimigo_Jump.png
 WIDTH,HEIGHT=800,480
-TITLE="Quadrado em Fuga"
-VOL=0.01
+TITLE="Raposa Saltadora"
+VOL=0.3  # aumentei o volume para testar
 
-state={"menu":True,"victory":False,"dead":False,"dt":0,"music_on":True,"track":"bg_loop","watch":None,"mtime":None}
+state={"menu":True,"victory":False,"dead":False,"dt":0,"music_on":True,"track":"bg_loop","watch":None,"mtime":None,"anim_time":0}
 
 class P:
     def __init__(self):
@@ -60,62 +61,21 @@ def play_music():
     if not state["music_on"]:
         try: music.stop()
         except: pass
+        try: sounds.bg_loop.stop()
+        except: pass
         state.update({"watch":None,"mtime":None}); return
-    try: music.stop()
-    except: pass
-    base=os.path.dirname(__file__); name=None; path=None
-    for n in [state["track"],"bg_loop","bg","music","theme","background","track","main_theme"]:
-        for ext in (".ogg",".wav",".mp3"):
-            p=os.path.join(base,"music",f"{n}{ext}")
-            if os.path.exists(p): name,path=n,p; break
-        if name: break
-    if not name:
-        try:
-            files=sorted(os.listdir(os.path.join(base,"music")))
-            for f in files:
-                if f.lower().endswith((".ogg",".wav",".mp3")):
-                    name=os.path.splitext(f)[0]; path=os.path.join(base,"music",f); break
-        except: pass
-    if name:
-        try: music.set_volume(VOL)
-        except: pass
-        try: music.play_once(name)
-        except: pass
-        state["track"]=name; state["watch"]=path
-        try: state["mtime"]=os.path.getmtime(path)
-        except: state["mtime"]=None
-    else:
-        if hasattr(sounds,"bg_loop"):
-            try: sounds.bg_loop.set_volume(VOL)
-            except: pass
-            try: sounds.bg_loop.play()
-            except: pass
-            for ext in (".ogg",".wav",".mp3"):
-                p=os.path.join(base,"sounds",f"bg_loop{ext}")
-                if os.path.exists(p):
-                    state["watch"]=p
-                    try: state["mtime"]=os.path.getmtime(p)
-                    except: state["mtime"]=None
-                    break
+    
+    # Tenta usar o bg_loop diretamente
+    try:
+        if hasattr(sounds, "bg_loop"):
+            sounds.bg_loop.set_volume(VOL)
+            sounds.bg_loop.play(-1)  # -1 = loop infinito
+    except:
+        pass
 
 def poll_music():
-    p=state.get("watch")
-    if not p or not os.path.exists(p): return
-    try: m=os.path.getmtime(p)
-    except: return
-    if state.get("mtime") is None or m>state["mtime"]+0.001:
-        state["mtime"]=m
-        try: music.stop()
-        except: pass
-        t=state.get("track")
-        if t:
-            try:
-                music.play_once(t)
-                try: music.set_volume(VOL)
-                except: pass
-                return
-            except: pass
-        play_music()
+    # Simplificado - não faz reload automático
+    pass
 
 def draw():
     screen.clear()
@@ -130,17 +90,30 @@ def draw():
         screen.draw.filled_rect(rect,(40,120,220))
         y=HEIGHT-32+3
         for i in range(mn,mx,10): screen.draw.line((i,y),(i+6,y-3),(210,230,255))
-    for e in enemies: screen.draw.filled_rect(e.r(),(200,50,50))
-    # Hero: usa sprite se existir, senão fallback retângulo
-    if hasattr(images,"hero_idle_0"):
-        img=getattr(images,"hero_idle_0"); dx=int(player.x-img.get_width()/2); dy=int(player.y+player.h/2-img.get_height()); screen.blit("hero_idle_0",(dx,dy))
+    for e in enemies:
+        # Animação simples: alterna entre fall e jump para poses mais distintas
+        anim_frame = int((state["anim_time"] * 3) % 2)  # alterna a cada ~0.33 segundos
+        sprite_name = "inimigo_fall" if anim_frame == 0 else "inimigo_jump"
+        if hasattr(images, sprite_name): 
+            screen.blit(sprite_name, (int(e.x-14), int(e.y-32)))  # subiu mais 8 pixels
+        else: 
+            screen.draw.filled_rect(e.r(),(200,50,50))
+    # Hero: animação simples alternando entre fall e jump
+    anim_frame = int((state["anim_time"] * 4) % 2)  # alterna a cada ~0.25 segundos
+    hero_sprite = "heroi_fall" if anim_frame == 0 else "heroi_jump"
+    
+    if hasattr(images, hero_sprite):
+        img = getattr(images, hero_sprite)
+        dx = int(player.x - img.get_width()/2)
+        dy = int(player.y + player.h/2 - img.get_height())
+        screen.blit(hero_sprite, (dx, dy))
     else:
-        screen.draw.filled_rect(player.r(),(80,160,240))
+        screen.draw.filled_rect(player.r(), (80,160,240))
     for s in spikes:
         screen.draw.filled_rect(s,(150,0,0))
         for i in range(0,s.width,8): screen.draw.line((s.x+i,s.y+s.height),(s.x+i+4,s.y),(200,0,0))
     fx,fy=flag; screen.draw.line((fx,fy),(fx,fy-40),(139,69,19)); screen.draw.filled_rect(Rect(fx+2,fy-40,25,15),(255,0,0))
-    if state["menu"]: screen.draw.textbox("Quadrado em Fuga\nClick START",Rect(WIDTH//2-120,HEIGHT//2-60,240,120))
+    if state["menu"]: screen.draw.textbox("Raposa Saltadora\nClick START",Rect(WIDTH//2-120,HEIGHT//2-60,240,120))
     if state["victory"]: screen.draw.textbox("PARABENS!\nClique para reiniciar",Rect(WIDTH//2-140,HEIGHT//2-70,280,140))
 
 def die():
@@ -153,6 +126,7 @@ def reset_player():
 
 def update(dt):
     poll_music()
+    state["anim_time"] += dt  # timer para animação
     if state["menu"] or state["victory"]: return
     if state["dead"]:
         state["dt"]-=dt
